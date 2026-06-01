@@ -2224,7 +2224,9 @@ class Example:
 
     def test_final(self):
         body_q = self.state_0.body_q.numpy()
-        particle_q = self.state_0.particle_q.numpy()
+        particle_q = np.empty((0, 3), dtype=np.float32)
+        if self.state_0.particle_q is not None:
+            particle_q = self.state_0.particle_q.numpy()
         joint_q = self.state_0.joint_q.numpy()
 
         assert np.all(np.isfinite(body_q)), "Body transforms contain non-finite values"
