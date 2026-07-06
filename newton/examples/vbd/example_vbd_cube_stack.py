@@ -6,7 +6,7 @@
 #
 # Builds a small rigid-body cube stack and solves it with SolverVBD.
 #
-# Command: python newton/examples/vbd/examples_vbd_cube_stack.py
+# Command: python -m newton.examples vbd_cube_stack
 #
 ###########################################################################
 
@@ -20,30 +20,36 @@ import newton.examples
 PARAMS = {
     "fps": 60,
     "sim_substeps": 5,
-    "solver_iterations": 20,
+    "solver_iterations": 10,
+    "rigid_contact_hard": True,
+    "rigid_contact_history": False,
+    "rigid_avbd_alpha": 0.0,
     "gravity": -9.81,
-    "cube_half_extent": 0.005,
+    "cube_half_extent": 0.01,
     "cube_gap": 0.001,
-    "stack_levels": 10,
+    "level_gap": 0.006,
+    "stack_drop_height": 1.0,
+    "stack_levels": 1,
     "platform_half_extent": 0.6,
     "platform_thickness": 0.04,
-    "cube_density": 600.0,
-    "cube_ke": 8.0e3,
+    "cube_density": 1000.0,
+    "cube_ke": 300.0,
     "cube_kd": 0.0,
     "cube_mu": 0.85,
-    "platform_ke": 1.0e4,
+    "platform_ke": 300,
     "platform_kd": 0.0,
     "platform_mu": 0.9,
     "shape_margin": 0.000,
-    "rigid_body_contact_buffer_size": 128,
-    "initial_paused": False,
+    "rigid_contact_max": 8192,
+    "rigid_body_contact_buffer_size": 4096,
 }
 
 
 def build_model(builder, params):
     cube_half = params["cube_half_extent"]
     cube_size = cube_half * 2.0
-    spacing = cube_size + params["cube_gap"]
+    xy_spacing = cube_size + params["cube_gap"]
+    z_spacing = cube_size + params["level_gap"]
     platform_top = 0.0
 
     platform_cfg = newton.ModelBuilder.ShapeConfig()
@@ -83,13 +89,13 @@ def build_model(builder, params):
 
     for level in range(levels):
         cubes_per_side = levels - level
-        row_width = (cubes_per_side - 1) * spacing
-        z_pos = platform_top + cube_half + level * spacing
+        row_width = (cubes_per_side - 1) * xy_spacing
+        z_pos = platform_top + params["stack_drop_height"] + cube_half + level * z_spacing
 
         for x_idx in range(cubes_per_side):
             for y_idx in range(cubes_per_side):
-                x_pos = -row_width * 0.5 + x_idx * spacing
-                y_pos = -row_width * 0.5 + y_idx * spacing
+                x_pos = -row_width * 0.5 + x_idx * xy_spacing
+                y_pos = -row_width * 0.5 + y_idx * xy_spacing
                 body = builder.add_body(
                     xform=wp.transform(wp.vec3(x_pos, y_pos, z_pos), wp.quat_identity()),
                     label=f"cube_{level}_{x_idx}_{y_idx}",
@@ -104,21 +110,6 @@ def build_model(builder, params):
                 )
                 cube_bodies.append(body)
 
-    drop_z = platform_top + cube_half + levels * spacing + cube_size * 1.5
-    drop_body = builder.add_body(
-        xform=wp.transform(wp.vec3(spacing * 0.35, -spacing * 0.25, drop_z), wp.quat_identity()),
-        label="falling_cube",
-    )
-    builder.add_shape_box(
-        drop_body,
-        hx=cube_half,
-        hy=cube_half,
-        hz=cube_half,
-        cfg=cube_cfg,
-        color=wp.vec3(0.95, 0.92, 0.34),
-    )
-    cube_bodies.append(drop_body)
-
     builder.color()
 
     return {
@@ -130,10 +121,14 @@ def build_model(builder, params):
 
 def setup_sim(builder, params):
     model = builder.finalize()
+    model.rigid_contact_max = params["rigid_contact_max"]
     solver = newton.solvers.SolverVBD(
         model=model,
         iterations=params["solver_iterations"],
         rigid_body_contact_buffer_size=params["rigid_body_contact_buffer_size"],
+        rigid_avbd_alpha=params["rigid_avbd_alpha"],
+        rigid_contact_hard=params["rigid_contact_hard"],
+        rigid_contact_history=params["rigid_contact_history"],
     )
     return model, solver
 
@@ -159,8 +154,6 @@ class Example:
         self.contacts = self.model.contacts()
 
         self.viewer.set_model(self.model)
-        if hasattr(self.viewer, "_paused"):
-            self.viewer._paused = self.params["initial_paused"]
         if hasattr(self.viewer, "set_camera"):
             self.viewer.set_camera(wp.vec3(0.65, -0.75, 0.55), -18.0, 138.0)
 
